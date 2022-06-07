@@ -15,5 +15,7 @@ q키를 입력하면 프로그램이 종료합니다.
 ## 컴파일 커맨드
 
 gcc -c dir.c kbhit.c time.c
+
 ar rs libmine.a dir.o kbhit.o time.o
+
 gcc -o movedir movedir.c libmine.a
