@@ -1,17 +1,62 @@
-#include <stdio.h> 
-#include <fcntl.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <time.h> 
-#include <dirent.h> 		/* 디렉터리 조작 함수를 위한 헤더 파일 */
-#include <unistd.h>     //디렉토리 관련
-#include <string.h>    // strcat 함수가 선언된 헤더 파일
-#include "common.h" 
+#include "common.h"
 
-const char* dirType(const struct stat *buf)
-{         
+#include <stdio.h>
+#include <string.h>
+
+#include <unistd.h>     // lstat
+#include <sys/types.h>
+
+#include <dirent.h>     // DIR
+#include <time.h>
+
+int file_update(char *file_path, struct file_info *files) {
+
+    DIR *dp;                //디렉터리 조작을 위한 스트림
+    struct dirent *dirt;    //디렉터리의 항목을 위한 구조체
+    struct stat dir;        //각 디렉터리 구조체
+
+    if((dp = opendir(file_path)) == NULL) {
+        perror("directory open error\n");
+        return -1;
+  	}
+
+    int idx=0;
+
+    while((dirt = readdir(dp)) != NULL) {
+        if(dirt->d_ino == 0) continue;
+
+        lstat(dirt->d_name, &dir);
+
+        strcpy(files[idx].name, dirt->d_name);
+        files[idx].size = dir_size(&dir);
+        dir_time(&dir, &files[idx]);
+        files[idx].type = dir_type(&dir);
+        idx++;
+    }
+    strcpy(files[idx].name, "");
+
+    closedir(dp);
+    return 0;
+}
+
+int file_show(char *file_path, struct file_info *files) {
+    printf("%s\n", file_path);
+    printf("%-16s %-10s %15s %17s\n", "이름", "타입", "크기", "수정날짜");
+    for (int idx=0; strcmp(files[idx].name, "") != 0; idx++) {
+        printf("%-15s %-10s %10d %s\n",files[idx].name, files[idx].type, files[idx].size, files[idx].time);
+    }
+    printf("========================================================\n");
+}
+
+int is_dir(const char *file_name){
+    struct stat dir;
+    lstat(file_name, &dir);
+    if(S_ISDIR(dir.st_mode)) 
+        return 1;
+    return 0;
+}
+
+char* dir_type(const struct stat *buf) {         
     if(S_ISDIR(buf->st_mode)) 
         return "DIR";
     else if(S_ISREG(buf->st_mode)) 
@@ -26,68 +71,45 @@ const char* dirType(const struct stat *buf)
         return "BLOCK DEVICE";
     else if(S_ISLNK(buf->st_mode))
         return "LINK";
+    // else
+    //     return "none";
 }
 
-const char* dirTime(struct stat *buf)
-{ 
+int dir_time(struct stat *buf, struct file_info *file) { 
     struct tm *mtime; 
-    static char str[17];    
-    
+
     mtime=localtime(&buf->st_mtime); 
-    sprintf(str,"%04d-%02d-%02d %02d:%02d", 
+    sprintf(file->time ,"%04d-%02d-%02d %02d:%02d", 
             mtime->tm_year+1900, mtime->tm_mon+1, 
             mtime->tm_mday, mtime->tm_hour, 
             mtime->tm_min); 
-    return str;
+    return 0;
 }
 
-int dirsize(struct stat *buf)
-{
+int dir_size(struct stat *buf) {
     return buf->st_size;
 }
 
-int updatedir(char *saved_dir, char *now_dir, char (*dir_names)[255])
-{
-    char save_dir[255];     // history 저장할 경로
-
-    DIR *pdir; 			    //디렉터리 조작을 위한 스트림
-    struct dirent *dirt; 	//디렉터리의 항목을 위한 구조체
-    struct stat dir;        //각 디렉터리 구조체
-    int i=0;
-
-    strcpy(save_dir, saved_dir);
-    strcat(save_dir, "/dirhistory.txt");
+int path_update(char *now_file_path, char *new_file_path) {
     
-    FILE* fpw = fopen(save_dir, "a"); // dirhistory.txt을 쓰기모드로 열기
+    if (strcmp(new_file_path, "..") == 0) {
+        high_path(now_file_path);
+    } else {
+        strcat(now_file_path, "/");
+        strcat(now_file_path, new_file_path);
+    }
+    chdir(now_file_path);
 
-    if((pdir = opendir(now_dir)) <= 0)
-    { // 해당 디렉터리의 스트림 열기
-    perror("opendir");
+    return 1;    
+}
+
+int high_path(char *file_path) {
+    int len = strlen(file_path);
+    for( ; len>=0 ; len--) {
+        if (file_path[len] == '/') {
+            file_path[len] = '\0';
+            return 0;
+        }
+    }
     return -1;
-    }
-
-    fprintf(fpw, "\n검색시간 : %s\n",Time());
-    printf("%s\n",now_dir);
-    fprintf(fpw, "%s\n",now_dir);
-    
-    printf("%-16s %-10s %15s %17s\n", "이름", "타입", "크기", "수정날짜");
-    fprintf(fpw, "%-16s %-10s %15s %17s\n", "이름", "타입", "크기", "수정날짜");
-    
-    while((dirt = readdir(pdir)) != NULL)
-    {
-        lstat(dirt->d_name, &dir);
-        printf("%-15s %-10s %10d %s\n", dirt->d_name, dirType(&dir), dirsize(&dir), dirTime(&dir));
-        fprintf(fpw, "%-15s %-10s %10d %s\n", dirt->d_name, dirType(&dir), dirsize(&dir), dirTime(&dir));
-//        &dir_names[i++] = dirt->d_name;
-        strcpy(dir_names[i++], dirt->d_name);
-        fflush(fpw); //버퍼 비우기
-    }
-    printf("---------------------------------------------------\n");
-
-    for(;i<255; i++)//나머지 초기화
-    {
-        strcpy(dir_names[i], "");
-    }
-    fclose(fpw);
-    return 0;
 }

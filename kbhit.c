@@ -1,8 +1,8 @@
+#include "common.h"
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <termios.h>
-#include "common.h" 
+#include <fcntl.h>
+// #include <unistd.h>
 
 int kbhit(void)
 {
@@ -20,8 +20,7 @@ int kbhit(void)
 	tcsetattr(0, TCSANOW, &oldt);
 	fcntl(0, F_SETFL, oldf);
 
-	if(ch != EOF)
-	{
+	if(ch != EOF) {
 		ungetc(ch, stdin);
 		return -1;
 	}
